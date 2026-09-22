@@ -15,6 +15,10 @@
     color: var(--tg-theme-text-color, #000000);
     -webkit-tap-highlight-color: transparent;
   }
+  h1 {
+    font-size: 22px;
+    margin: 0 0 4px;
+  }
   h2 {
     font-size: 15px;
     margin: 0 0 12px;
@@ -48,11 +52,28 @@
     cursor: not-allowed;
   }
   .cell.disabled:active { transform: none; }
-  .halls .cell {
-    padding: 16px;
-    text-align: left;
-    font-weight: 500;
+  .halls .cell { padding: 16px; text-align: left; font-weight: 500; }
+  .menu {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 24px;
   }
+  .menu .item {
+    padding: 20px;
+    border-radius: 12px;
+    background: var(--tg-theme-secondary-bg-color, #f4f4f4);
+    color: var(--tg-theme-text-color, #000);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 16px;
+    font-weight: 500;
+    user-select: none;
+  }
+  .menu .item:active { transform: scale(0.98); }
+  .menu .icon { font-size: 22px; }
   .back {
     display: inline-block;
     background: transparent;
@@ -71,6 +92,29 @@
     line-height: 1.6;
   }
   .summary div { margin: 2px 0; }
+  .booking-row {
+    padding: 14px 16px;
+    background: var(--tg-theme-secondary-bg-color, #f4f4f4);
+    border-radius: 12px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .booking-row .info { font-size: 14px; line-height: 1.4; flex: 1; }
+  .booking-row .info b { display: block; font-size: 15px; margin-bottom: 2px; }
+  .cancel-btn {
+    background: transparent;
+    border: 1px solid var(--tg-theme-destructive-text-color, #d63d3d);
+    color: var(--tg-theme-destructive-text-color, #d63d3d);
+    padding: 8px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    flex-shrink: 0;
+  }
   .empty, .loading {
     color: var(--tg-theme-hint-color, #999);
     font-size: 14px;
@@ -90,6 +134,12 @@
     font-size: 12px;
     margin: -12px 0 12px;
   }
+  .info-text {
+    line-height: 1.6;
+    font-size: 15px;
+    color: var(--tg-theme-text-color, #000);
+  }
+  .info-text b { display: block; margin-top: 12px; }
 </style>
 </head>
 <body>
@@ -107,30 +157,182 @@
   tg.expand();
 
   const params = new URLSearchParams(location.search);
-  const apiURL = params.get('api'); // may be null → skip live availability
-  let halls = [];
-  try {
-    halls = JSON.parse(params.get('halls') || '[]');
-  } catch (_) { halls = []; }
+  const apiURL = params.get('api') || '';
 
   const state = {
+    screen: 'menu',       // 'menu' | 'book' | 'mine' | 'info'
     hall: null,
     day: null,
     duration: null,
     time: null,
-    bookedSlots: [],       // filled after fetching availability
-    availabilityFor: null, // "hallID|date" cache key
+    halls: [],
+    hallsLoaded: false,
+    bookedSlots: [],
+    availabilityFor: null,
+    myBookings: [],
   };
   const app = document.getElementById('app');
 
+  // ---------- API helpers ----------
+
+  async function apiGET(path) {
+    const resp = await fetch(apiURL.replace(/\/$/, '') + '/' + path.replace(/^\//, ''), {
+      headers: { 'X-Init-Data': tg.initData || '' },
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status + ': ' + await resp.text());
+    return resp.json();
+  }
+  async function apiPOST(path, body) {
+    const resp = await fetch(apiURL.replace(/\/$/, '') + '/' + path.replace(/^\//, ''), {
+      method: 'POST',
+      headers: {
+        'X-Init-Data': tg.initData || '',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+    const text = await resp.text();
+    if (!resp.ok) throw new Error('HTTP ' + resp.status + ': ' + text);
+    return text ? JSON.parse(text) : {};
+  }
+
+  // ---------- rendering ----------
+
   function clearMainButton() {
     tg.MainButton.hide();
-    tg.MainButton.offClick(submit);
+    tg.MainButton.offClick(submitBooking);
   }
 
   function render() {
     app.innerHTML = '';
     clearMainButton();
+    switch (state.screen) {
+      case 'menu': return renderMenu();
+      case 'info': return renderInfo();
+      case 'mine': return renderMyBookings();
+      case 'book': return renderBookFlow();
+    }
+  }
+
+  function renderMenu() {
+    const h1 = el('h1', '🏓 BookingBrother');
+    app.appendChild(h1);
+
+    const menu = el('div', '', 'menu');
+    menu.appendChild(menuItem('📅', 'Book a slot', () => { resetBookFlow(); state.screen = 'book'; render(); }));
+    menu.appendChild(menuItem('📋', 'My bookings', async () => {
+      state.screen = 'mine';
+      state.myBookings = null; // triggers loading state
+      render();
+      try {
+        const data = await apiGET('bookings/mine');
+        state.myBookings = data.bookings || [];
+      } catch (e) {
+        state.myBookings = 'error:' + e.message;
+      }
+      render();
+    }));
+    menu.appendChild(menuItem('ℹ️', 'Info', () => { state.screen = 'info'; render(); }));
+    app.appendChild(menu);
+  }
+
+  function menuItem(icon, label, onclick) {
+    const item = el('div', '', 'item');
+    item.innerHTML = '<span class="icon">' + icon + '</span>' + escapeHTML(label);
+    item.onclick = onclick;
+    return item;
+  }
+
+  function renderInfo() {
+    addBack(() => { state.screen = 'menu'; render(); }, 'Back');
+    app.appendChild(el('h2', 'About'));
+    const t = el('div', '', 'info-text');
+    t.innerHTML =
+      'BookingBrother lets you reserve table-tennis slots at halls in your city.' +
+      '<b>Book a slot</b>Pick a hall, day, duration, and start time. The picker greys out hours that are already taken.' +
+      '<b>My bookings</b>See all your upcoming reservations and cancel any of them with one tap.' +
+      '<b>Cancelling in chat</b>You can also type /list or /cancel in the chat if the app is unavailable.' +
+      '<b>Change your city</b>Send /coordinates in the chat and share your location.';
+    app.appendChild(t);
+  }
+
+  function renderMyBookings() {
+    addBack(() => { state.screen = 'menu'; render(); }, 'Back');
+    app.appendChild(el('h2', 'My bookings'));
+    if (state.myBookings === null) {
+      app.appendChild(el('div', 'Loading…', 'loading'));
+      return;
+    }
+    if (typeof state.myBookings === 'string' && state.myBookings.startsWith('error:')) {
+      const box = el('div', state.myBookings.slice(6), 'error');
+      app.appendChild(box);
+      return;
+    }
+    if (state.myBookings.length === 0) {
+      app.appendChild(el('div', 'You have no bookings.\nTap "Book a slot" to create one.', 'empty'));
+      return;
+    }
+    state.myBookings.forEach(b => {
+      const row = el('div', '', 'booking-row');
+      const info = el('div', '', 'info');
+      info.innerHTML =
+        '<b>' + escapeHTML(b.date) + ' · ' + escapeHTML(b.time_of_start || b.TimeOfStart || '') + ':00</b>' +
+        (b.duration || b.Duration) + ' hour' + ((b.duration || b.Duration) > 1 ? 's' : '') +
+        ' · hall ' + escapeHTML(b.tennis_hall_id || b.TennisHallID || '');
+      const btn = el('button', 'Cancel', 'cancel-btn');
+      btn.onclick = () => cancelBooking(b);
+      row.appendChild(info);
+      row.appendChild(btn);
+      app.appendChild(row);
+    });
+  }
+
+  function cancelBooking(b) {
+    tg.showConfirm('Cancel this booking?', async (confirmed) => {
+      if (!confirmed) return;
+      try {
+        await apiPOST('bookings/cancel', {
+          id:   b.id   || b.ID,
+          date: b.date || b.Date,
+        });
+        state.myBookings = state.myBookings.filter(x => (x.id || x.ID) !== (b.id || b.ID));
+        render();
+      } catch (e) {
+        tg.showAlert('Cancel failed: ' + e.message);
+      }
+    });
+  }
+
+  // ---------- book flow ----------
+
+  function resetBookFlow() {
+    state.hall = null;
+    state.day = null;
+    state.duration = null;
+    state.time = null;
+    state.bookedSlots = [];
+    state.availabilityFor = null;
+  }
+
+  async function renderBookFlow() {
+    if (!state.hallsLoaded) {
+      app.appendChild(el('div', 'Loading halls…', 'loading'));
+      try {
+        const data = await apiGET('halls');
+        if (data.reason === 'no_city') {
+          state.halls = [];
+        } else {
+          state.halls = data.halls || [];
+        }
+        state.hallsLoaded = true;
+        render();
+      } catch (e) {
+        app.innerHTML = '';
+        addBack(() => { state.screen = 'menu'; render(); }, 'Back');
+        app.appendChild(errorBox('Failed to load halls: ' + e.message));
+      }
+      return;
+    }
     if (!state.hall) return renderHalls();
     if (!state.day) return renderDays();
     if (!state.duration) return renderDurations();
@@ -139,15 +341,15 @@
   }
 
   function renderHalls() {
-    if (halls.length === 0) {
-      app.innerHTML =
-        '<div class="empty">No halls available for your city.<br>' +
-        'Send <b>/coordinates</b> to the bot first.</div>';
+    addBack(() => { state.screen = 'menu'; render(); }, 'Back to menu');
+    if (state.halls.length === 0) {
+      app.appendChild(errorBox(
+        'No halls available. Send /coordinates in the chat to set your location, then reopen.'));
       return;
     }
     app.appendChild(el('h2', 'Choose a hall'));
     const grid = el('div', '', 'grid halls');
-    halls.forEach(h => {
+    state.halls.forEach(h => {
       const cell = el('div', '🏓 ' + (h.address || h.id), 'cell');
       cell.onclick = () => { state.hall = h; render(); };
       grid.appendChild(cell);
@@ -177,7 +379,6 @@
 
   async function pickDay(dateStr) {
     state.day = dateStr;
-    // Fetch availability once per (hall, day) pair.
     const key = state.hall.id + '|' + dateStr;
     if (state.availabilityFor !== key) {
       app.innerHTML = '<div class="loading">Loading availability…</div>';
@@ -188,13 +389,9 @@
   }
 
   async function fetchAvailability(hallID, date) {
-    if (!apiURL) { state.bookedSlots = []; return; }
     try {
-      const url = apiURL + '?hall_id=' + encodeURIComponent(hallID) +
-                           '&date='    + encodeURIComponent(date);
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error('HTTP ' + resp.status);
-      const data = await resp.json();
+      const data = await apiGET('availability?hall_id=' +
+        encodeURIComponent(hallID) + '&date=' + encodeURIComponent(date));
       state.bookedSlots = Array.isArray(data.booked) ? data.booked : [];
     } catch (e) {
       console.error('availability fetch failed', e);
@@ -253,34 +450,46 @@
     app.appendChild(s);
     tg.MainButton.setText('Confirm booking');
     tg.MainButton.show();
-    tg.MainButton.onClick(submit);
+    tg.MainButton.onClick(submitBooking);
   }
 
-  function submit() {
-    const payload = {
-      hall_id:      state.hall.id,
-      hall_address: state.hall.address || '',
-      date:         state.day,
-      time:         state.time,
-      duration:     state.duration,
-    };
-    tg.sendData(JSON.stringify(payload));
-    tg.close();
+  async function submitBooking() {
+    tg.MainButton.showProgress();
+    try {
+      await apiPOST('bookings/create', {
+        hall_id:  state.hall.id,
+        date:     state.day,
+        time:     state.time,
+        duration: state.duration,
+      });
+      tg.MainButton.hideProgress();
+      tg.showAlert('✅ Booking confirmed!', () => {
+        resetBookFlow();
+        state.screen = 'menu';
+        tg.close();
+      });
+    } catch (e) {
+      tg.MainButton.hideProgress();
+      tg.showAlert('Booking failed: ' + e.message);
+    }
   }
+
+  // ---------- utils ----------
 
   function addBack(fn, label) {
     const b = el('button', '← ' + label, 'back');
     b.onclick = fn;
     app.appendChild(b);
   }
-
   function el(tag, text, cls) {
     const e = document.createElement(tag);
     if (cls) e.className = cls;
     if (text) e.textContent = text;
     return e;
   }
-
+  function errorBox(text) {
+    return el('div', text, 'error');
+  }
   function escapeHTML(s) {
     return String(s).replace(/[&<>"']/g, c => (
       { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
