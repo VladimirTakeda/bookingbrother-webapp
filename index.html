@@ -219,13 +219,13 @@
     app.appendChild(h1);
 
     const initData = tg.initData || '';
+    const hash = location.hash || '';
     const dbg = el('div',
       'DEBUG api=' + (apiURL || '(empty)') +
       ' | initData.len=' + initData.length +
       ' | platform=' + (tg.platform || '?') +
       ' | version=' + (tg.version || '?') +
-      ' | hash.len=' + (location.hash || '').length +
-      ' | unsafe=' + JSON.stringify(tg.initDataUnsafe || {}).slice(0, 120),
+      ' | hash[0..200]=' + hash.slice(0, 200),
       'hint');
     dbg.style.wordBreak = 'break-all';
     app.appendChild(dbg);
