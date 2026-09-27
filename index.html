@@ -222,7 +222,10 @@
     const dbg = el('div',
       'DEBUG api=' + (apiURL || '(empty)') +
       ' | initData.len=' + initData.length +
-      ' | initData[0..40]=' + initData.slice(0, 40),
+      ' | platform=' + (tg.platform || '?') +
+      ' | version=' + (tg.version || '?') +
+      ' | hash.len=' + (location.hash || '').length +
+      ' | unsafe=' + JSON.stringify(tg.initDataUnsafe || {}).slice(0, 120),
       'hint');
     dbg.style.wordBreak = 'break-all';
     app.appendChild(dbg);
