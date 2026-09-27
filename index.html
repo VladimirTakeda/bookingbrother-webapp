@@ -218,7 +218,12 @@
     const h1 = el('h1', '🏓 BookingBrother');
     app.appendChild(h1);
 
-    const dbg = el('div', 'DEBUG api=' + (apiURL || '(empty)'), 'hint');
+    const initData = tg.initData || '';
+    const dbg = el('div',
+      'DEBUG api=' + (apiURL || '(empty)') +
+      ' | initData.len=' + initData.length +
+      ' | initData[0..40]=' + initData.slice(0, 40),
+      'hint');
     dbg.style.wordBreak = 'break-all';
     app.appendChild(dbg);
 
