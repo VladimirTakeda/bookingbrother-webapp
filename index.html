@@ -220,12 +220,16 @@
 
     const initData = tg.initData || '';
     const hash = location.hash || '';
+    const hashParams = new URLSearchParams(hash.slice(1));
+    const keys = [];
+    hashParams.forEach((_, k) => keys.push(k));
     const dbg = el('div',
       'DEBUG api=' + (apiURL || '(empty)') +
       ' | initData.len=' + initData.length +
       ' | platform=' + (tg.platform || '?') +
-      ' | version=' + (tg.version || '?') +
-      ' | hash[0..200]=' + hash.slice(0, 200),
+      ' | hash.len=' + hash.length +
+      ' | hash.keys=[' + keys.join(',') + ']' +
+      ' | tgWebAppData.len=' + (hashParams.get('tgWebAppData') || '').length,
       'hint');
     dbg.style.wordBreak = 'break-all';
     app.appendChild(dbg);
