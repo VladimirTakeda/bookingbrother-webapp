@@ -218,6 +218,10 @@
     const h1 = el('h1', '🏓 BookingBrother');
     app.appendChild(h1);
 
+    const dbg = el('div', 'DEBUG api=' + (apiURL || '(empty)'), 'hint');
+    dbg.style.wordBreak = 'break-all';
+    app.appendChild(dbg);
+
     const menu = el('div', '', 'menu');
     menu.appendChild(menuItem('📅', 'Book a slot', () => { resetBookFlow(); state.screen = 'book'; render(); }));
     menu.appendChild(menuItem('📋', 'My bookings', async () => {
