@@ -157,7 +157,8 @@
   tg.expand();
 
   const params = new URLSearchParams(location.search);
-  const apiURL = params.get('api') || '';
+  const DEFAULT_API_URL = 'https://cf3a9bgdd7.execute-api.eu-north-1.amazonaws.com/';
+  const apiURL = params.get('api') || DEFAULT_API_URL;
 
   const state = {
     screen: 'menu',       // 'menu' | 'book' | 'mine' | 'info'
