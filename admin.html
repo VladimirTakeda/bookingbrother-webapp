@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>BookingBrother Admin — Claim a hall</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 16px 16px 100px;
+    font-family: -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
+    background: var(--tg-theme-bg-color, #ffffff);
+    color: var(--tg-theme-text-color, #000000);
+    -webkit-tap-highlight-color: transparent;
+  }
+  h1 { font-size: 20px; margin: 0 0 16px; }
+  label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--tg-theme-hint-color, #666);
+    margin: 16px 0 6px;
+  }
+  input[type="text"], input[type="number"] {
+    width: 100%;
+    padding: 12px 14px;
+    font-size: 16px;
+    border: 1px solid var(--tg-theme-hint-color, #ccc);
+    border-radius: 10px;
+    background: var(--tg-theme-secondary-bg-color, #f4f4f4);
+    color: var(--tg-theme-text-color, #000);
+    -webkit-appearance: none;
+  }
+  input:focus { outline: 2px solid var(--tg-theme-button-color, #2481cc); }
+  .hint {
+    font-size: 12px;
+    color: var(--tg-theme-hint-color, #999);
+    margin: 6px 0 0;
+  }
+  #map {
+    width: 100%;
+    height: 260px;
+    border-radius: 10px;
+    margin-top: 4px;
+  }
+  .locate-btn {
+    margin-top: 8px;
+    padding: 10px 14px;
+    font-size: 14px;
+    font-weight: 500;
+    border: 1px solid var(--tg-theme-button-color, #2481cc);
+    color: var(--tg-theme-button-color, #2481cc);
+    background: transparent;
+    border-radius: 10px;
+    cursor: pointer;
+  }
+  .photo-wrap {
+    position: relative;
+    width: 100%;
+    min-height: 120px;
+    border: 2px dashed var(--tg-theme-hint-color, #ccc);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background: var(--tg-theme-secondary-bg-color, #f4f4f4);
+    cursor: pointer;
+  }
+  .photo-wrap input[type="file"] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+  .photo-wrap img {
+    max-width: 100%;
+    max-height: 240px;
+    display: block;
+  }
+  .photo-placeholder {
+    color: var(--tg-theme-hint-color, #999);
+    text-align: center;
+    padding: 32px 12px;
+    font-size: 14px;
+  }
+  .submit-area {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    padding: 12px 16px;
+    background: var(--tg-theme-bg-color, #ffffff);
+    border-top: 1px solid var(--tg-theme-hint-color, #e0e0e0);
+  }
+  button.primary {
+    width: 100%;
+    padding: 14px;
+    font-size: 16px;
+    font-weight: 600;
+    background: var(--tg-theme-button-color, #2481cc);
+    color: var(--tg-theme-button-text-color, #fff);
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+  }
+  button.primary[disabled] { opacity: 0.5; cursor: not-allowed; }
+  .error {
+    color: #d63d3d;
+    background: rgba(214, 61, 61, 0.08);
+    border-radius: 10px;
+    padding: 12px;
+    margin: 12px 0;
+    font-size: 14px;
+  }
+  .success {
+    color: #2a9d2a;
+    background: rgba(42, 157, 42, 0.08);
+    border-radius: 10px;
+    padding: 16px;
+    margin: 20px 0;
+    font-size: 15px;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+<h1>🏓 Claim a hall</h1>
+<div id="form">
+  <label for="address">Address</label>
+  <input id="address" type="text" placeholder="Street, building, etc." maxlength="500" autocomplete="off">
+
+  <label>Location of the hall</label>
+  <div id="map"></div>
+  <button type="button" id="locate" class="locate-btn">📍 Use my current location</button>
+  <p class="hint">Tap or drag the pin to the exact hall location. The city is detected automatically.</p>
+
+  <label for="tables">Number of tables</label>
+  <input id="tables" type="number" min="1" max="1000" step="1" inputmode="numeric">
+
+  <label>Photo of the hall</label>
+  <div class="photo-wrap" id="photo-wrap">
+    <input type="file" id="photo" accept="image/*">
+    <div class="photo-placeholder" id="photo-placeholder">Tap to pick a photo</div>
+    <img id="photo-preview" style="display:none;" alt="">
+  </div>
+
+  <div id="error" class="error" style="display:none;"></div>
+</div>
+<div id="done" class="success" style="display:none;"></div>
+
+<div class="submit-area">
+  <button id="submit" class="primary" type="button">Submit for review</button>
+</div>
+
+<script>
+(function () {
+  const tg = window.Telegram && window.Telegram.WebApp;
+  const inTelegram = !!(tg && tg.initData);
+  if (tg) { tg.ready(); tg.expand(); }
+
+  const params = new URLSearchParams(location.search);
+  const DEFAULT_API_URL = 'https://2r8w1y5bv1.execute-api.eu-north-1.amazonaws.com';
+  const apiURL = (params.get('api') || DEFAULT_API_URL).replace(/\/$/, '');
+
+  // Default view: broad enough to be useful, admin re-centers via locate button or map tap.
+  let marker = null;
+  const map = L.map('map', { zoomControl: true }).setView([41.65, 41.63], 11); // Batumi-ish
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '© OpenStreetMap',
+  }).addTo(map);
+
+  function placeMarker(lat, lon) {
+    if (marker) { marker.setLatLng([lat, lon]); return; }
+    marker = L.marker([lat, lon], { draggable: true }).addTo(map);
+  }
+  map.on('click', (e) => { placeMarker(e.latlng.lat, e.latlng.lng); });
+
+  document.getElementById('locate').addEventListener('click', () => {
+    if (!navigator.geolocation) { showError('Geolocation not supported by this browser.'); return; }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude: lat, longitude: lon } = pos.coords;
+        map.setView([lat, lon], 16);
+        placeMarker(lat, lon);
+      },
+      (err) => showError('Could not get location: ' + err.message),
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  });
+
+  // Photo picker with preview + base64 conversion.
+  let photoB64 = null;
+  const photoInput = document.getElementById('photo');
+  const photoPreview = document.getElementById('photo-preview');
+  const photoPlaceholder = document.getElementById('photo-placeholder');
+  photoInput.addEventListener('change', () => {
+    const file = photoInput.files && photoInput.files[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      showError('Photo too large (max 10 MB).');
+      photoInput.value = '';
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      photoB64 = reader.result;
+      photoPreview.src = photoB64;
+      photoPreview.style.display = 'block';
+      photoPlaceholder.style.display = 'none';
+    };
+    reader.readAsDataURL(file);
+  });
+
+  const submitBtn = document.getElementById('submit');
+  submitBtn.addEventListener('click', onSubmit);
+
+  function showError(msg) {
+    const el = document.getElementById('error');
+    el.textContent = msg;
+    el.style.display = 'block';
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  function clearError() { document.getElementById('error').style.display = 'none'; }
+
+  async function onSubmit() {
+    clearError();
+    if (!inTelegram) { showError('Please open this page from inside the admin bot.'); return; }
+
+    const address = document.getElementById('address').value.trim();
+    const tables = parseInt(document.getElementById('tables').value, 10);
+    if (!address) { showError('Address is required.'); return; }
+    if (!marker) { showError('Pick a location on the map.'); return; }
+    if (!tables || tables < 1) { showError('Enter a valid number of tables.'); return; }
+    if (!photoB64) { showError('Pick a photo of the hall.'); return; }
+
+    const { lat, lng } = marker.getLatLng();
+    const body = {
+      address,
+      latitude: lat,
+      longitude: lng,
+      tables,
+      photo: photoB64,
+    };
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Submitting…';
+    try {
+      const resp = await fetch(apiURL + '/claim-submit', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Init-Data': tg.initData,
+        },
+        body: JSON.stringify(body),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        showError(data.error || ('Error ' + resp.status));
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Submit for review';
+        return;
+      }
+      document.getElementById('form').style.display = 'none';
+      document.querySelector('.submit-area').style.display = 'none';
+      const done = document.getElementById('done');
+      done.textContent = '✅ Submitted for review. City: ' + (data.city || '(unknown)');
+      done.style.display = 'block';
+      setTimeout(() => { tg && tg.close && tg.close(); }, 2500);
+    } catch (e) {
+      showError('Network error: ' + e.message);
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Submit for review';
+    }
+  }
+})();
+</script>
+</body>
+</html>
