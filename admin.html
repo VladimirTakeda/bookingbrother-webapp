@@ -179,6 +179,21 @@
     font-size: 15px;
     text-align: center;
   }
+  .hall-row {
+    padding: 14px 16px;
+    background: var(--tg-theme-secondary-bg-color, #f4f4f4);
+    border-radius: 12px;
+    margin-bottom: 10px;
+  }
+  .hall-row .addr { font-size: 15px; font-weight: 500; margin-bottom: 2px; }
+  .hall-row .city { font-size: 13px; color: var(--tg-theme-hint-color, #999); }
+  .hall-row .id   { font-size: 11px; color: var(--tg-theme-hint-color, #bbb); margin-top: 4px; font-family: monospace; }
+  .empty-halls {
+    color: var(--tg-theme-hint-color, #999);
+    text-align: center;
+    padding: 40px 12px;
+    font-size: 14px;
+  }
 </style>
 </head>
 <body>
@@ -194,32 +209,50 @@
     if (window.__dbgPaint) window.__dbgPaint();
   }
 </script>
-<h1>🏓 Claim a hall</h1>
-<div id="form">
-  <label for="address">Address</label>
-  <input id="address" type="text" placeholder="Street, building, etc." maxlength="500" autocomplete="off">
-
-  <label>Location of the hall</label>
-  <div id="map"></div>
-  <button type="button" id="locate" class="locate-btn">📍 Use my current location</button>
-  <p class="hint">Tap or drag the pin to the exact hall location. The city is detected automatically.</p>
-
-  <label for="tables">Number of tables</label>
-  <input id="tables" type="number" min="1" max="1000" step="1" inputmode="numeric">
-
-  <label>Photo of the hall</label>
-  <div class="photo-wrap" id="photo-wrap">
-    <input type="file" id="photo" accept="image/*">
-    <div class="photo-placeholder" id="photo-placeholder">Tap to pick a photo</div>
-    <img id="photo-preview" style="display:none;" alt="">
-  </div>
-
-  <div id="error" class="error" style="display:none;"></div>
+<!-- Loading placeholder shown while we fetch /my-halls on launch. -->
+<div id="loading-view" style="padding: 40px 12px; text-align: center; color: var(--tg-theme-hint-color, #999);">
+  Loading…
 </div>
-<div id="done" class="success" style="display:none;"></div>
 
-<div class="submit-area">
-  <button id="submit" class="primary" type="button">Submit for review</button>
+<!-- Homepage: list of halls the admin owns + a Claim button. -->
+<div id="home-view" style="display:none;">
+  <h1>🏓 Your halls</h1>
+  <div id="halls-list"></div>
+  <div class="submit-area">
+    <button id="new-claim-btn" class="primary" type="button">Claim a new hall</button>
+  </div>
+</div>
+
+<!-- Claim form screen. Default-hidden; shown either because the admin has no
+     halls yet, or when they tap "Claim a new hall" on the homepage. -->
+<div id="claim-view" style="display:none;">
+  <h1>🏓 Claim a hall</h1>
+  <div id="form">
+    <label for="address">Address</label>
+    <input id="address" type="text" placeholder="Street, building, etc." maxlength="500" autocomplete="off">
+
+    <label>Location of the hall</label>
+    <div id="map"></div>
+    <button type="button" id="locate" class="locate-btn">📍 Use my current location</button>
+    <p class="hint">Tap or drag the pin to the exact hall location. The city is detected automatically.</p>
+
+    <label for="tables">Number of tables</label>
+    <input id="tables" type="number" min="1" max="1000" step="1" inputmode="numeric">
+
+    <label>Photo of the hall</label>
+    <div class="photo-wrap" id="photo-wrap">
+      <input type="file" id="photo" accept="image/*">
+      <div class="photo-placeholder" id="photo-placeholder">Tap to pick a photo</div>
+      <img id="photo-preview" style="display:none;" alt="">
+    </div>
+
+    <div id="error" class="error" style="display:none;"></div>
+  </div>
+  <div id="done" class="success" style="display:none;"></div>
+
+  <div class="submit-area">
+    <button id="submit" class="primary" type="button">Submit for review</button>
+  </div>
 </div>
 
 <script>
@@ -239,6 +272,75 @@
     console.error('Leaflet L is undefined — map will not render');
   }
 
+  // -------- Screen management --------
+  // Three views: loading-view (initial), home-view (hall list), claim-view
+  // (the form). On launch we fetch /my-halls to decide which to show.
+  const loadingView = document.getElementById('loading-view');
+  const homeView = document.getElementById('home-view');
+  const claimView = document.getElementById('claim-view');
+
+  function showClaim() {
+    loadingView.style.display = 'none';
+    homeView.style.display = 'none';
+    claimView.style.display = 'block';
+    // Leaflet needs invalidateSize after the map container becomes visible,
+    // otherwise tiles render only in a thin strip.
+    setTimeout(() => { if (map) map.invalidateSize(); }, 0);
+  }
+  function showHome(halls) {
+    const list = document.getElementById('halls-list');
+    if (!halls || halls.length === 0) {
+      list.innerHTML = '<div class="empty-halls">No halls yet. Tap "Claim a new hall" below.</div>';
+    } else {
+      list.innerHTML = halls.map(renderHallRow).join('');
+    }
+    loadingView.style.display = 'none';
+    claimView.style.display = 'none';
+    homeView.style.display = 'block';
+  }
+  function renderHallRow(h) {
+    const esc = (s) => String(s || '').replace(/[&<>"']/g, (c) =>
+      ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    return '<div class="hall-row">' +
+      '<div class="addr">' + esc(h.address || '(no address)') + '</div>' +
+      '<div class="city">' + esc(h.city || '') + '</div>' +
+      '<div class="id">#' + esc(h.hall_id) + '</div>' +
+      '</div>';
+  }
+
+  document.getElementById('new-claim-btn').addEventListener('click', showClaim);
+
+  async function routeOnLoad() {
+    if (!inTelegram) {
+      // No initData → can't call authenticated endpoints. Just show the
+      // claim form; submit will show a friendly error.
+      showClaim();
+      return;
+    }
+    try {
+      const resp = await fetch(apiURL + '/my-halls', {
+        method: 'GET',
+        headers: { 'X-Init-Data': tg.initData },
+      });
+      if (!resp.ok) {
+        console.error('my-halls returned', resp.status);
+        showClaim();
+        return;
+      }
+      const data = await resp.json();
+      const halls = (data && data.halls) || [];
+      if (halls.length === 0) {
+        showClaim();
+      } else {
+        showHome(halls);
+      }
+    } catch (e) {
+      console.error('my-halls failed:', e);
+      showClaim();
+    }
+  }
+  // Fire after Leaflet init below so map/invalidateSize is safe.
+
   // Default view: broad enough to be useful, admin re-centers via locate button or map tap.
   let marker = null;
   console.log('creating map');
@@ -249,6 +351,8 @@
     attribution: '© OpenStreetMap',
   }).addTo(map);
   console.log('tiles added');
+
+  routeOnLoad();
 
   function placeMarker(lat, lon) {
     if (marker) {
