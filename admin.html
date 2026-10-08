@@ -184,15 +184,91 @@
     background: var(--tg-theme-secondary-bg-color, #f4f4f4);
     border-radius: 12px;
     margin-bottom: 10px;
+    cursor: pointer;
+    transition: transform 0.05s;
   }
+  .hall-row:active { transform: scale(0.98); }
   .hall-row .addr { font-size: 15px; font-weight: 500; margin-bottom: 2px; }
   .hall-row .city { font-size: 13px; color: var(--tg-theme-hint-color, #999); }
   .hall-row .id   { font-size: 11px; color: var(--tg-theme-hint-color, #bbb); margin-top: 4px; font-family: monospace; }
-  .empty-halls {
+  .empty-halls, .empty-bookings {
     color: var(--tg-theme-hint-color, #999);
     text-align: center;
     padding: 40px 12px;
     font-size: 14px;
+  }
+  .back-btn {
+    display: inline-block;
+    background: transparent;
+    border: none;
+    color: var(--tg-theme-link-color, #2481cc);
+    padding: 6px 0 12px;
+    cursor: pointer;
+    font-size: 14px;
+  }
+  .menu-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 16px 18px;
+    margin-bottom: 10px;
+    background: var(--tg-theme-secondary-bg-color, #f4f4f4);
+    color: var(--tg-theme-text-color, #000);
+    border: none;
+    border-radius: 12px;
+    font-size: 16px;
+    cursor: pointer;
+    transition: transform 0.05s;
+  }
+  .menu-item:active { transform: scale(0.98); }
+  .date-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+    gap: 8px;
+    margin-bottom: 24px;
+  }
+  .date-cell {
+    padding: 12px 8px;
+    border: 1px solid var(--tg-theme-hint-color, #ccc);
+    border-radius: 10px;
+    background: var(--tg-theme-secondary-bg-color, #f4f4f4);
+    color: var(--tg-theme-text-color, #000);
+    cursor: pointer;
+    text-align: center;
+    font-size: 14px;
+    line-height: 1.3;
+    transition: transform 0.05s;
+    user-select: none;
+  }
+  .date-cell:active { transform: scale(0.97); }
+  .booking-row {
+    padding: 14px 16px;
+    background: var(--tg-theme-secondary-bg-color, #f4f4f4);
+    border-radius: 12px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .booking-row .info { font-size: 14px; line-height: 1.4; flex: 1; }
+  .booking-row .info b { display: block; font-size: 15px; margin-bottom: 2px; }
+  .cancel-btn {
+    background: transparent;
+    border: 1px solid var(--tg-theme-destructive-text-color, #d63d3d);
+    color: var(--tg-theme-destructive-text-color, #d63d3d);
+    padding: 8px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    flex-shrink: 0;
+  }
+  .cancel-btn[disabled] { opacity: 0.4; cursor: not-allowed; }
+  .section-title {
+    font-size: 13px;
+    color: var(--tg-theme-hint-color, #999);
+    margin-bottom: 12px;
   }
 </style>
 </head>
@@ -221,6 +297,30 @@
   <div class="submit-area">
     <button id="new-claim-btn" class="primary" type="button">Claim a new hall</button>
   </div>
+</div>
+
+<!-- Hall detail: menu of actions for one hall. -->
+<div id="hall-view" style="display:none;">
+  <button class="back-btn" id="hall-back-btn" type="button">← Back</button>
+  <h1 id="hall-title">Hall</h1>
+  <div id="hall-subtitle" class="section-title"></div>
+  <button class="menu-item" id="menu-today" type="button">📅 Today's bookings</button>
+  <button class="menu-item" id="menu-date" type="button">🗓 Pick a date</button>
+</div>
+
+<!-- Date picker: tap a day to view its bookings. -->
+<div id="date-view" style="display:none;">
+  <button class="back-btn" id="date-back-btn" type="button">← Back</button>
+  <h1>Pick a date</h1>
+  <div class="date-grid" id="date-grid"></div>
+</div>
+
+<!-- Bookings for a hall + date. Each row has a Cancel button. -->
+<div id="bookings-view" style="display:none;">
+  <button class="back-btn" id="bookings-back-btn" type="button">← Back</button>
+  <h1 id="bookings-title">Bookings</h1>
+  <div id="bookings-subtitle" class="section-title"></div>
+  <div id="bookings-list"></div>
 </div>
 
 <!-- Claim form screen. Default-hidden; shown either because the admin has no
@@ -273,42 +373,199 @@
   }
 
   // -------- Screen management --------
-  // Three views: loading-view (initial), home-view (hall list), claim-view
-  // (the form). On launch we fetch /my-halls to decide which to show.
-  const loadingView = document.getElementById('loading-view');
-  const homeView = document.getElementById('home-view');
-  const claimView = document.getElementById('claim-view');
+  // Views: loading / home / claim / hall / date / bookings. Navigation is
+  // one-level deep; "Back" always returns to the previous logical screen.
+  const loadingView  = document.getElementById('loading-view');
+  const homeView     = document.getElementById('home-view');
+  const claimView    = document.getElementById('claim-view');
+  const hallView     = document.getElementById('hall-view');
+  const dateView     = document.getElementById('date-view');
+  const bookingsView = document.getElementById('bookings-view');
+  const allViews = [loadingView, homeView, claimView, hallView, dateView, bookingsView];
+
+  // State the subsequent screens read from.
+  let currentHall = null;     // {hall_id, address, city}
+  let currentHalls = [];      // last-fetched hall list, so showHome can refresh
+
+  function showOnly(view) {
+    allViews.forEach((v) => { v.style.display = 'none'; });
+    view.style.display = 'block';
+  }
+
+  function esc(s) {
+    return String(s || '').replace(/[&<>"']/g, (c) =>
+      ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
 
   function showClaim() {
-    loadingView.style.display = 'none';
-    homeView.style.display = 'none';
-    claimView.style.display = 'block';
+    showOnly(claimView);
     // Leaflet needs invalidateSize after the map container becomes visible,
     // otherwise tiles render only in a thin strip.
     setTimeout(() => { if (map) map.invalidateSize(); }, 0);
   }
   function showHome(halls) {
+    currentHalls = halls || currentHalls;
     const list = document.getElementById('halls-list');
-    if (!halls || halls.length === 0) {
+    if (!currentHalls || currentHalls.length === 0) {
       list.innerHTML = '<div class="empty-halls">No halls yet. Tap "Claim a new hall" below.</div>';
     } else {
-      list.innerHTML = halls.map(renderHallRow).join('');
+      list.innerHTML = currentHalls.map((h, i) =>
+        '<div class="hall-row" data-idx="' + i + '">' +
+          '<div class="addr">' + esc(h.address || '(no address)') + '</div>' +
+          '<div class="city">' + esc(h.city || '') + '</div>' +
+          '<div class="id">#' + esc(h.hall_id) + '</div>' +
+        '</div>'
+      ).join('');
+      list.querySelectorAll('.hall-row').forEach((el) => {
+        el.addEventListener('click', () => {
+          const idx = parseInt(el.getAttribute('data-idx'), 10);
+          openHall(currentHalls[idx]);
+        });
+      });
     }
-    loadingView.style.display = 'none';
-    claimView.style.display = 'none';
-    homeView.style.display = 'block';
+    showOnly(homeView);
   }
-  function renderHallRow(h) {
-    const esc = (s) => String(s || '').replace(/[&<>"']/g, (c) =>
-      ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-    return '<div class="hall-row">' +
-      '<div class="addr">' + esc(h.address || '(no address)') + '</div>' +
-      '<div class="city">' + esc(h.city || '') + '</div>' +
-      '<div class="id">#' + esc(h.hall_id) + '</div>' +
-      '</div>';
+  function openHall(hall) {
+    currentHall = hall;
+    document.getElementById('hall-title').textContent = hall.address || 'Hall';
+    document.getElementById('hall-subtitle').textContent =
+      (hall.city ? hall.city + ' · ' : '') + '#' + hall.hall_id;
+    showOnly(hallView);
   }
 
+  // "YYYY.MM.DD" in the user's local timezone (the format the main bot stores).
+  function fmtDate(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return y + '.' + m + '.' + day;
+  }
+  function todayStr() { return fmtDate(new Date()); }
+
+  function showDatePicker() {
+    const grid = document.getElementById('date-grid');
+    const cells = [];
+    const now = new Date();
+    for (let i = 0; i < 14; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
+      const dateStr = fmtDate(d);
+      const label = d.toLocaleDateString(undefined, { weekday: 'short', day: '2-digit' });
+      cells.push('<div class="date-cell" data-date="' + dateStr + '">' + esc(label) + '</div>');
+    }
+    grid.innerHTML = cells.join('');
+    grid.querySelectorAll('.date-cell').forEach((el) => {
+      el.addEventListener('click', () => {
+        showBookings(el.getAttribute('data-date'));
+      });
+    });
+    showOnly(dateView);
+  }
+
+  async function showBookings(dateStr) {
+    if (!currentHall) return;
+    document.getElementById('bookings-title').textContent =
+      'Bookings · ' + dateStr;
+    document.getElementById('bookings-subtitle').textContent =
+      currentHall.address + (currentHall.city ? ' · ' + currentHall.city : '');
+    document.getElementById('bookings-list').innerHTML =
+      '<div class="empty-bookings">Loading…</div>';
+    showOnly(bookingsView);
+
+    try {
+      const url = apiURL + '/hall-bookings?hall_id=' +
+        encodeURIComponent(currentHall.hall_id) + '&date=' + encodeURIComponent(dateStr);
+      const resp = await fetch(url, { headers: { 'X-Init-Data': tg ? tg.initData : '' } });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        document.getElementById('bookings-list').innerHTML =
+          '<div class="empty-bookings">Error: ' + esc(data.error || resp.status) + '</div>';
+        return;
+      }
+      renderBookings(data.bookings || [], dateStr);
+    } catch (e) {
+      document.getElementById('bookings-list').innerHTML =
+        '<div class="empty-bookings">Network error: ' + esc(e.message) + '</div>';
+    }
+  }
+  function renderBookings(bookings, dateStr) {
+    const list = document.getElementById('bookings-list');
+    if (!bookings.length) {
+      list.innerHTML = '<div class="empty-bookings">No bookings.</div>';
+      return;
+    }
+    list.innerHTML = bookings.map((b) =>
+      '<div class="booking-row" data-booking="' + esc(b.booking_id) + '" data-date="' + esc(b.date) + '">' +
+        '<div class="info">' +
+          '<b>' + esc(b.time_of_start) + ':00 · ' + esc(String(b.duration)) + 'h</b>' +
+          '🪑 ' + esc(String(b.number_of_tables)) + ' table(s) · 👤 ' + esc(b.user_id) +
+        '</div>' +
+        '<button class="cancel-btn" type="button">Cancel</button>' +
+      '</div>'
+    ).join('');
+    list.querySelectorAll('.booking-row').forEach((row) => {
+      const btn = row.querySelector('.cancel-btn');
+      btn.addEventListener('click', () => cancelBooking(row, btn));
+    });
+  }
+
+  async function cancelBooking(rowEl, btnEl) {
+    const bookingID = rowEl.getAttribute('data-booking');
+    const date = rowEl.getAttribute('data-date');
+    // Prefer Telegram's native confirm; fall back to the browser one when
+    // tg.showConfirm is unavailable (older clients, local dev in a browser).
+    const confirmed = await new Promise((resolve) => {
+      if (tg && typeof tg.showConfirm === 'function') {
+        tg.showConfirm('Cancel this booking?', (ok) => resolve(!!ok));
+      } else {
+        resolve(window.confirm('Cancel this booking?'));
+      }
+    });
+    if (!confirmed) return;
+
+    btnEl.disabled = true;
+    btnEl.textContent = 'Cancelling…';
+    try {
+      const resp = await fetch(apiURL + '/cancel-booking', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Init-Data': tg ? tg.initData : '',
+        },
+        body: JSON.stringify({ booking_id: bookingID, date: date }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        btnEl.disabled = false;
+        btnEl.textContent = 'Cancel';
+        if (tg && typeof tg.showAlert === 'function') {
+          tg.showAlert('Cancel failed: ' + (data.error || resp.status));
+        } else {
+          alert('Cancel failed: ' + (data.error || resp.status));
+        }
+        return;
+      }
+      // Fade the row out instead of leaving dead UI behind.
+      rowEl.style.transition = 'opacity 0.3s';
+      rowEl.style.opacity = '0.3';
+      btnEl.textContent = 'Cancelled';
+    } catch (e) {
+      btnEl.disabled = false;
+      btnEl.textContent = 'Cancel';
+      if (tg && typeof tg.showAlert === 'function') {
+        tg.showAlert('Network error: ' + e.message);
+      } else {
+        alert('Network error: ' + e.message);
+      }
+    }
+  }
+
+  // Navigation glue.
   document.getElementById('new-claim-btn').addEventListener('click', showClaim);
+  document.getElementById('hall-back-btn').addEventListener('click', () => showHome());
+  document.getElementById('date-back-btn').addEventListener('click', () => showOnly(hallView));
+  document.getElementById('bookings-back-btn').addEventListener('click', () => showOnly(hallView));
+  document.getElementById('menu-today').addEventListener('click', () => showBookings(todayStr()));
+  document.getElementById('menu-date').addEventListener('click', showDatePicker);
 
   async function routeOnLoad() {
     if (!inTelegram) {
