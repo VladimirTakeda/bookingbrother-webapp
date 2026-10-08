@@ -251,10 +251,42 @@
   console.log('tiles added');
 
   function placeMarker(lat, lon) {
-    if (marker) { marker.setLatLng([lat, lon]); return; }
-    marker = L.marker([lat, lon], { draggable: true }).addTo(map);
+    if (marker) {
+      marker.setLatLng([lat, lon]);
+    } else {
+      marker = L.marker([lat, lon], { draggable: true }).addTo(map);
+      marker.on('dragend', () => {
+        const ll = marker.getLatLng();
+        autoFillAddress(ll.lat, ll.lng);
+      });
+    }
+    autoFillAddress(lat, lon);
   }
   map.on('click', (e) => { placeMarker(e.latlng.lat, e.latlng.lng); });
+
+  // Reverse-geocode the pin to a street-level address and drop it into the
+  // address field — but only when the field is empty, so manual edits win.
+  // zoom=18 gives building-level detail (vs. zoom=10 the main bot uses for
+  // city-only resolution).
+  const addrInput = document.getElementById('address');
+  let geocodeSeq = 0;
+  async function autoFillAddress(lat, lng) {
+    if (addrInput.value.trim() !== '') return;
+    const seq = ++geocodeSeq;
+    try {
+      const url = 'https://nominatim.openstreetmap.org/reverse?format=json' +
+        '&lat=' + lat + '&lon=' + lng + '&zoom=18&addressdetails=1&accept-language=en';
+      const resp = await fetch(url);
+      if (!resp.ok) return;
+      const data = await resp.json();
+      // Guard against out-of-order responses: a slow earlier call shouldn't
+      // overwrite a later pin's result, and we still skip if user has typed.
+      if (seq !== geocodeSeq || addrInput.value.trim() !== '') return;
+      if (data && data.display_name) addrInput.value = data.display_name;
+    } catch (e) {
+      console.error('reverse geocode failed:', e);
+    }
+  }
 
   document.getElementById('locate').addEventListener('click', () => {
     if (!navigator.geolocation) { showError('Geolocation not supported by this browser.'); return; }
