@@ -276,10 +276,18 @@
     state.myBookings.forEach(b => {
       const row = el('div', '', 'booking-row');
       const info = el('div', '', 'info');
+      const date = b.date || b.Date || '';
+      const time = b.time_of_start || b.TimeOfStart || '';
+      const dur = b.duration || b.Duration || 0;
+      const hallID = b.tennis_hall_id || b.TennisHallID || '';
+      // Prefer the hall's real address when the backend joined it in;
+      // fall back to the raw id so old API responses still render something.
+      const hallLabel = b.hall_address ? b.hall_address : ('hall ' + hallID);
       info.innerHTML =
-        '<b>' + escapeHTML(b.date) + ' · ' + escapeHTML(b.time_of_start || b.TimeOfStart || '') + ':00</b>' +
-        (b.duration || b.Duration) + ' hour' + ((b.duration || b.Duration) > 1 ? 's' : '') +
-        ' · hall ' + escapeHTML(b.tennis_hall_id || b.TennisHallID || '');
+        '<b>' + escapeHTML(date) + ' · ' + escapeHTML(time) + ':00</b>' +
+        dur + ' hour' + (dur > 1 ? 's' : '') +
+        ' · ' + escapeHTML(hallLabel) +
+        (b.hall_city ? ', ' + escapeHTML(b.hall_city) : '');
       const btn = el('button', 'Cancel', 'cancel-btn');
       btn.onclick = () => cancelBooking(b);
       row.appendChild(info);
