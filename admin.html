@@ -282,10 +282,23 @@
       // Guard against out-of-order responses: a slow earlier call shouldn't
       // overwrite a later pin's result, and we still skip if user has typed.
       if (seq !== geocodeSeq || addrInput.value.trim() !== '') return;
-      if (data && data.display_name) addrInput.value = data.display_name;
+      const formatted = buildAddressFromParts(data && data.address);
+      if (formatted) addrInput.value = formatted;
     } catch (e) {
       console.error('reverse geocode failed:', e);
     }
+  }
+
+  // Build "<house_number> <road>, <city>, <country>" from Nominatim's
+  // structured address, skipping the business/amenity name that
+  // display_name usually leads with (e.g. "McShawarma, 15 Rustaveli…" →
+  // just "15 Rustaveli…"). Falls back gracefully when parts are missing.
+  function buildAddressFromParts(a) {
+    if (!a) return '';
+    const street = [a.house_number, a.road].filter(Boolean).join(' ');
+    const city = a.city || a.town || a.village || a.state || '';
+    const country = a.country || '';
+    return [street, city, country].filter(Boolean).join(', ');
   }
 
   document.getElementById('locate').addEventListener('click', () => {
