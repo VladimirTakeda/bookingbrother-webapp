@@ -493,15 +493,16 @@
       list.innerHTML = '<div class="empty-bookings">No bookings.</div>';
       return;
     }
-    list.innerHTML = bookings.map((b) =>
-      '<div class="booking-row" data-booking="' + esc(b.booking_id) + '" data-date="' + esc(b.date) + '">' +
+    list.innerHTML = bookings.map((b) => {
+      const who = b.user_name ? b.user_name : ('id ' + b.user_id);
+      return '<div class="booking-row" data-booking="' + esc(b.booking_id) + '" data-date="' + esc(b.date) + '">' +
         '<div class="info">' +
           '<b>' + esc(b.time_of_start) + ':00 · ' + esc(String(b.duration)) + 'h</b>' +
-          '🪑 ' + esc(String(b.number_of_tables)) + ' table(s) · 👤 ' + esc(b.user_id) +
+          '🪑 ' + esc(String(b.number_of_tables)) + ' table(s) · 👤 ' + esc(who) +
         '</div>' +
         '<button class="cancel-btn" type="button">Cancel</button>' +
-      '</div>'
-    ).join('');
+      '</div>';
+    }).join('');
     list.querySelectorAll('.booking-row').forEach((row) => {
       const btn = row.querySelector('.cancel-btn');
       btn.addEventListener('click', () => cancelBooking(row, btn));
