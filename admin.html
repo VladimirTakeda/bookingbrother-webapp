@@ -279,12 +279,10 @@
       const resp = await fetch(url);
       if (!resp.ok) return;
       const data = await resp.json();
-      console.log('nominatim address:', data && data.address);
       // Guard against out-of-order responses: a slow earlier call shouldn't
       // overwrite a later pin's result, and we still skip if user has typed.
       if (seq !== geocodeSeq || addrInput.value.trim() !== '') return;
       const formatted = buildAddressFromParts(data && data.address);
-      console.log('formatted address:', formatted);
       if (formatted) addrInput.value = formatted;
     } catch (e) {
       console.error('reverse geocode failed:', e);
